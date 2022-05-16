@@ -502,6 +502,10 @@
                   <!-- Sets the VM argument line used when unit tests are run. -->
                   <argLine>${surefireArgLine} ${sureFireOptions11}</argLine>
                   <reuseForks>${sureFireForks11}</reuseForks>
+<!--                  <includes>-->
+<!--                     设置单个要测试的类-->
+<!--                     <include>**/*MiscTest.java</include>-->
+<!--                  </includes>-->
                </configuration>
             </plugin>
 

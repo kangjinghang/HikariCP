@@ -42,9 +42,9 @@ public class HikariDataSource extends HikariConfig implements DataSource, Closea
    private static final Logger LOGGER = LoggerFactory.getLogger(HikariDataSource.class);
 
    private final AtomicBoolean isShutdown = new AtomicBoolean();
-
+   // 从性能方面考虑，使用 fastPathPool 来创建连接会比 pool 更好一些，因为 pool 被 volatile 修饰了，为了保证可见性不能使用缓存。那为什么还要用到 pool 呢
    private final HikariPool fastPathPool;
-   private volatile HikariPool pool;
+   private volatile HikariPool pool; // pool 的存在可以用来支持双重检查锁
 
    /**
     * Default constructor.  Setters are used to configure the pool.  Using

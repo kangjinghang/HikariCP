@@ -32,7 +32,7 @@ import java.util.function.UnaryOperator;
 
 /**
  * Fast list without range checking.
- *
+ * 避免每次 get() 调用都要进行 range check，避免调用 remove() 时的从头到尾的扫描
  * @author Brett Wooldridge
  */
 @SuppressWarnings("NullableProblems")

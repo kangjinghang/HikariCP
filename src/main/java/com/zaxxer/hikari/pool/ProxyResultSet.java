@@ -65,7 +65,7 @@ public abstract class ProxyResultSet implements ResultSet
    @Override
    public void updateRow() throws SQLException
    {
-      connection.markCommitStateDirty();
+      connection.markCommitStateDirty(); // 增加了执行记录 connection.markCommitStateDirty()
       delegate.updateRow();
    }
 
@@ -73,7 +73,7 @@ public abstract class ProxyResultSet implements ResultSet
    @Override
    public void insertRow() throws SQLException
    {
-      connection.markCommitStateDirty();
+      connection.markCommitStateDirty(); // 增加了执行记录 connection.markCommitStateDirty()
       delegate.insertRow();
    }
 
@@ -81,7 +81,7 @@ public abstract class ProxyResultSet implements ResultSet
    @Override
    public void deleteRow() throws SQLException
    {
-      connection.markCommitStateDirty();
+      connection.markCommitStateDirty(); // 增加了执行记录 connection.markCommitStateDirty()
       delegate.deleteRow();
    }
 

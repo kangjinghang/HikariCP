@@ -64,7 +64,7 @@ public final class JavassistProxyFactory
 
       modifyProxyFactory();
    }
-
+   // 修改工厂类中的代理类获取方法
    private static void modifyProxyFactory() throws NotFoundException, CannotCompileException, IOException {
       System.out.println("Generating method bodies for com.zaxxer.hikari.proxy.ProxyFactory");
 
@@ -100,7 +100,7 @@ public final class JavassistProxyFactory
    }
 
    /**
-    *  Generate Javassist Proxy Classes
+    *  Generate Javassist Proxy Classes  负责生成实际使用的代理类字节码
     */
    private static <T> void generateProxyClass(Class<T> primaryInterface, String superClassName, String methodBody) throws Exception
    {
@@ -172,8 +172,8 @@ public final class JavassistProxyFactory
          }
       }
 
-      targetCt.getClassFile().setMajorVersion(ClassFile.JAVA_8);
-      targetCt.writeFile(genDirectory + "target/classes");
+      targetCt.getClassFile().setMajorVersion(ClassFile.JAVA_8); // 采用 Java8
+      targetCt.writeFile(genDirectory + "target/classes"); // 放到 target/classes 目录下
    }
 
    private static boolean isThrowsSqlException(CtMethod method)

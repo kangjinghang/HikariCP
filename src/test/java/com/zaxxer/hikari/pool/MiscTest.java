@@ -94,7 +94,7 @@ public class MiscTest
          assertTrue(e.getCause() instanceof ClassNotFoundException);
       }
    }
-
+   // 测试 leakDetectionThreshold 参数
    @Test
    public void testLeakDetection() throws Exception
    {

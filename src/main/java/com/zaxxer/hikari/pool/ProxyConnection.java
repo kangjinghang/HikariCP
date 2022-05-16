@@ -31,7 +31,7 @@ import static com.zaxxer.hikari.SQLExceptionOverride.Override.DO_NOT_EVICT;
 
 /**
  * This is the proxy class for java.sql.Connection.
- *
+ * ，凡涉及Statement、CallableStatement、PreparedStatement 的方法都用到了先缓存 statement，然后通过 ProxyFactory 工厂生成的字节码代理类
  * @author Brett Wooldridge
  */
 public abstract class ProxyConnection implements Connection
@@ -176,19 +176,19 @@ public abstract class ProxyConnection implements Connection
          var exception = (nse != null) ? nse : sqle;
          LOGGER.warn("{} - Connection {} marked as broken because of SQLSTATE({}), ErrorCode({})",
             poolEntry.getPoolName(), delegate, exception.getSQLState(), exception.getErrorCode(), exception);
-         leakTask.cancel();
+         leakTask.cancel();  // 在 checkException 的时候 cancel 掉泄漏检测的这个 task
          poolEntry.evict("(connection is broken)");
          delegate = ClosedConnection.CLOSED_CONNECTION;
       }
 
       return sqle;
    }
-
+   // 移出 statement 缓存
    final synchronized void untrackStatement(final Statement statement)
    {
-      openStatements.remove(statement);
+      openStatements.remove(statement); // FastList remove
    }
-
+   // 用于标识连接被访问或存在可提交数据
    final void markCommitStateDirty()
    {
       if (!isAutoCommit) {
@@ -200,14 +200,14 @@ public abstract class ProxyConnection implements Connection
    {
       leakTask.cancel();
    }
-
+   // 缓存statement
    private synchronized <T extends Statement> T trackStatement(final T statement)
    {
       openStatements.add(statement);
 
       return statement;
    }
-
+   // 关闭全部已打开的 statement（只在 close 方法中调用）
    @SuppressWarnings("EmptyTryBlock")
    private synchronized void closeStatements()
    {
@@ -220,7 +220,7 @@ public abstract class ProxyConnection implements Connection
             catch (SQLException e) {
                LOGGER.warn("{} - Connection {} marked as broken because of an exception closing open statements during Connection.close()",
                            poolEntry.getPoolName(), delegate);
-               leakTask.cancel();
+               leakTask.cancel();  // 在 closeStatements 的时候 cancel 掉泄漏检测的这个 task
                poolEntry.evict("(exception closing Statements during Connection.close())");
                delegate = ClosedConnection.CLOSED_CONNECTION;
             }
@@ -242,7 +242,7 @@ public abstract class ProxyConnection implements Connection
       closeStatements();
 
       if (delegate != ClosedConnection.CLOSED_CONNECTION) {
-         leakTask.cancel();
+         leakTask.cancel(); // 在归还的时候 cancel 掉泄漏检测的这个 task
 
          try {
             if (isCommitStateDirty && !isAutoCommit) {
@@ -264,7 +264,7 @@ public abstract class ProxyConnection implements Connection
          }
          finally {
             delegate = ClosedConnection.CLOSED_CONNECTION;
-            poolEntry.recycle();
+            poolEntry.recycle(); // poolEntry 通过 borrow 从 bag 中取出，再通过 requite 放回。资源成功回收
          }
       }
    }
@@ -298,14 +298,14 @@ public abstract class ProxyConnection implements Connection
       return ProxyFactory.getProxyStatement(this, trackStatement(delegate.createStatement(resultSetType, concurrency, holdability)));
    }
 
-
+   // 通过 ProxyFactory 工厂生成的字节码代理类
    /** {@inheritDoc} */
    @Override
    public CallableStatement prepareCall(String sql) throws SQLException
    {
       return ProxyFactory.getProxyCallableStatement(this, trackStatement(delegate.prepareCall(sql)));
    }
-
+   // 通过 ProxyFactory 工厂生成的字节码代理类
    /** {@inheritDoc} */
    @Override
    public CallableStatement prepareCall(String sql, int resultSetType, int concurrency) throws SQLException
@@ -474,7 +474,7 @@ public abstract class ProxyConnection implements Connection
    // **********************************************************************
    //                         Private classes
    // **********************************************************************
-
+   // ProxyConnection 中动态代理实现的唯一实例化对象。全局唯一变量，作为已关闭连接的代理引用，为连接关闭后外界代理连接的引用调用提供处理，同时唯一类减少了内存消耗和比对代价
    private static final class ClosedConnection
    {
       static final Connection CLOSED_CONNECTION = getClosedConnection();
@@ -483,7 +483,7 @@ public abstract class ProxyConnection implements Connection
       {
          InvocationHandler handler = (proxy, method, args) -> {
             final String methodName = method.getName();
-            if ("isClosed".equals(methodName)) {
+            if ("isClosed".equals(methodName)) { // 只保留3个方法的快速返回，其他均抛出异常
                return Boolean.TRUE;
             }
             else if ("isValid".equals(methodName)) {

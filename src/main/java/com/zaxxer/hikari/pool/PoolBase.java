@@ -60,8 +60,8 @@ abstract class PoolBase
    volatile String catalog;
    final AtomicReference<Exception> lastConnectionFailure;
 
-   long connectionTimeout;
-   long validationTimeout;
+   long connectionTimeout;  // 默认值是SECONDS.toMillis(30) = 30000，默认配置validate之后的值是30000，validate重置以后是如果小于250毫秒，则被重置回30秒
+   long validationTimeout; // 控制连接测试活动的最长时间。这个值必须小于 connectionTimeout。最低可接受的验证超时时间为250 ms，默认值：5000
 
    SQLExceptionOverride exceptionOverride;
 
@@ -124,7 +124,7 @@ abstract class PoolBase
    // ***********************************************************************
    //                           JDBC methods
    // ***********************************************************************
-
+   // 这是永久关闭真实（底层）连接（catch 忽略掉任何 Exception 异常）
    void quietlyCloseConnection(final Connection connection, final String closureReason)
    {
       if (connection != null) {
@@ -149,10 +149,10 @@ abstract class PoolBase
       try {
          try {
             setNetworkTimeout(connection, validationTimeout);
-
+//  validationTimeout的默认值是5000毫秒，所以默认情况下 validationSeconds 的值应该在1-5毫秒之间。又由于validationTimeout的值必须小于connectionTimeout（默认值30000毫秒，如果小于250毫秒，则被重置回30秒），所以默认情况下，调整validationTimeout却不调整connectionTimeout情况下，validationSeconds的默认最大值应该是30毫秒。
             final var validationSeconds = (int) Math.max(1000L, validationTimeout) / 1000;
-
-            if (isUseJdbc4Validation) {
+            // 如果使用 isUseJdbc4Validation 判断（即 config.getConnectionTestQuery() == null;）
+            if (isUseJdbc4Validation) { // 用connection.isValid(validationSeconds)来验证连接的有效性，否则的话则用connectionTestQuery查询语句来查询验证
                return !connection.isValid(validationSeconds);
             }
 
@@ -160,7 +160,7 @@ abstract class PoolBase
                if (isNetworkTimeoutSupported != TRUE) {
                   setQueryTimeout(statement, validationSeconds);
                }
-
+               // 用 connectionTestQuery 查询语句来查询验证
                statement.execute(config.getConnectionTestQuery());
             }
          }
@@ -385,7 +385,7 @@ abstract class PoolBase
    }
 
    /**
-    * Setup a connection initial state.
+    * Setup a connection initial state. 设置 connection 到初始化状态
     *
     * @param connection a Connection
     * @throws ConnectionSetupException thrown if any exception is encountered

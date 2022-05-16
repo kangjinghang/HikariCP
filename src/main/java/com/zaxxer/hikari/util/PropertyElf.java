@@ -35,20 +35,20 @@ public final class PropertyElf
    private PropertyElf() {
       // cannot be constructed
    }
-
+   // 这个方法就是将 properties 的参数设置到 HikariConfig 中
    public static void setTargetFromProperties(final Object target, final Properties properties)
    {
       if (target == null || properties == null) {
          return;
       }
 
-      var methods = Arrays.asList(target.getClass().getMethods());
+      var methods = Arrays.asList(target.getClass().getMethods()); // 获取 HikariConfig 的所有方法
       properties.forEach((key, value) -> {
-         if (target instanceof HikariConfig && key.toString().startsWith("dataSource.")) {
+         if (target instanceof HikariConfig && key.toString().startsWith("dataSource.")) { // 如果是 dataSource.* 的参数，直接加入到 dataSourceProperties 属性
             ((HikariConfig) target).addDataSourceProperty(key.toString().substring("dataSource.".length()), value);
          }
          else {
-            setProperty(target, key.toString(), value, methods);
+            setProperty(target, key.toString(), value, methods); // 找到参数对应的 setter 方法并赋值
          }
       });
    }

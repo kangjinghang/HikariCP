@@ -27,14 +27,14 @@ import java.util.concurrent.ScheduledExecutorService;
 class ProxyLeakTaskFactory
 {
    private ScheduledExecutorService executorService;
-   private long leakDetectionThreshold;
+   private long leakDetectionThreshold; // 即如果要生效则必须>0，而且不能小于2秒 || 当 maxLifetime > 0 时不能大于maxLifetime（默认值1800000毫秒=30分钟）
 
    ProxyLeakTaskFactory(final long leakDetectionThreshold, final ScheduledExecutorService executorService)
    {
       this.executorService = executorService;
       this.leakDetectionThreshold = leakDetectionThreshold;
    }
-
+   // 如果 leakDetectionThreshold=0，即禁用连接泄露检测
    ProxyLeakTask schedule(final PoolEntry poolEntry)
    {
       return (leakDetectionThreshold == 0) ? ProxyLeakTask.NO_LEAK : scheduleNewTask(poolEntry);

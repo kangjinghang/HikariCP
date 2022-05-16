@@ -52,30 +52,30 @@ import static java.util.concurrent.locks.LockSupport.parkNanos;
  * "requite" borrowed objects otherwise a memory leak will result.  Only
  * the "remove" method can completely remove an object from the bag.
  *
- * @author Brett Wooldridge
+ * @author Brett Wooldridge // ConcurrentBag 中全部的资源均只能通过 add 方法进行添加，只能通过 remove 方法进行移出
  *
  * @param <T> the templated type to store in the bag
  */
-public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseable
+public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseable // 一个专门的并发包裹，在连接池（多线程数据交互）的实现上具有比LinkedBlockingQueue和LinkedTransferQueue更优越的性能。
 {
    private static final Logger LOGGER = LoggerFactory.getLogger(ConcurrentBag.class);
 
-   private final CopyOnWriteArrayList<T> sharedList;
-   private final boolean weakThreadLocals;
+   private final CopyOnWriteArrayList<T> sharedList; // 负责存放 ConcurrentBag 中全部用于出借的资源
+   private final boolean weakThreadLocals; // 来判断是否使用弱引用
 
-   private final ThreadLocal<List<Object>> threadList;
+   private final ThreadLocal<List<Object>> threadList; // 用于加速线程本地化资源访问
    private final IBagStateListener listener;
    private final AtomicInteger waiters;
    private volatile boolean closed;
 
-   private final SynchronousQueue<T> handoffQueue;
+   private final SynchronousQueue<T> handoffQueue; // 用于存在资源等待线程时的第一手资源交接
 
    public interface IConcurrentBagEntry
    {
-      int STATE_NOT_IN_USE = 0;
-      int STATE_IN_USE = 1;
-      int STATE_REMOVED = -1;
-      int STATE_RESERVED = -2;
+      int STATE_NOT_IN_USE = 0; // 未使用，即闲置中
+      int STATE_IN_USE = 1; // 使用中
+      int STATE_REMOVED = -1; // 被废弃
+      int STATE_RESERVED = -2; // 保留态，中间状态，用于尝试驱逐连接对象时
 
       boolean compareAndSet(int expectState, int newState);
       void setState(int newState);
@@ -96,8 +96,8 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
    {
       this.listener = listener;
       this.weakThreadLocals = useWeakThreadLocals();
-
-      this.handoffQueue = new SynchronousQueue<>(true);
+      // SynchronousQueue 无存储空间的阻塞队列
+      this.handoffQueue = new SynchronousQueue<>(true); // 公平模式
       this.waiters = new AtomicInteger();
       this.sharedList = new CopyOnWriteArrayList<>();
       if (weakThreadLocals) {
@@ -111,7 +111,7 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
    /**
     * The method will borrow a BagEntry from the bag, blocking for the
     * specified timeout if none are available.
-    *
+    * 进行数据资源借用，只提供对象引用，不移除对象，因此使用时通过 borrow 取出的对象必须通过 requite 方法进行放回，否则容易导致内存泄露
     * @param timeout how long to wait before giving up, in units of unit
     * @param timeUnit a <code>TimeUnit</code> determining how to interpret the timeout parameter
     * @return a borrowed instance from the bag or null if a timeout occurs
@@ -119,13 +119,13 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
     */
    public T borrow(long timeout, final TimeUnit timeUnit) throws InterruptedException
    {
-      // Try the thread-local list first
+      // Try the thread-local list first 优先查看 ThreadLocal 中有没有可用的本地化的资源
       final var list = threadList.get();
       for (int i = list.size() - 1; i >= 0; i--) {
          final var entry = list.remove(i);
          @SuppressWarnings("unchecked")
          final T bagEntry = weakThreadLocals ? ((WeakReference<T>) entry).get() : (T) entry;
-         if (bagEntry != null && bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) {
+         if (bagEntry != null && bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) { // 将状态由 STATE_NOT_IN_USE 改为 STATE_IN_USE
             return bagEntry;
          }
       }
@@ -133,22 +133,22 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
       // Otherwise, scan the shared list ... then poll the handoff queue
       final int waiting = waiters.incrementAndGet();
       try {
-         for (T bagEntry : sharedList) {
-            if (bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) {
+         for (T bagEntry : sharedList) { // 当 ThreadLocal 中无可用本地化资源时，遍历全部资源，查看是否存在可用资源， 因此被一个线程本地化的资源也可能被另一个线程“抢走”
+            if (bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) { // 抢到了，将状态由 STATE_NOT_IN_USE 改为 STATE_IN_USE
                // If we may have stolen another waiter's connection, request another bag add.
                if (waiting > 1) {
-                  listener.addBagItem(waiting - 1);
+                  listener.addBagItem(waiting - 1); // 因为可能“抢走”了其他线程的资源，因此提醒包裹进行资源添加 waiting - 1 个资源
                }
                return bagEntry;
             }
          }
 
          listener.addBagItem(waiting);
-
+         // 如果还没获取到，会堵塞等待空闲连接
          timeout = timeUnit.toNanos(timeout);
-         do {
-            final var start = currentTime();
-            final T bagEntry = handoffQueue.poll(timeout, NANOSECONDS);
+         do { // 这里会出现三种情况，1.超时，返回null 2.获取到资源，但状态为正在使用，继续循环 3.获取到资源，元素状态为未使用，修改为已使用并返回
+            final var start = currentTime(); // 一定时间内轮询 handoff 队列
+            final T bagEntry = handoffQueue.poll(timeout, NANOSECONDS); // 当现有全部资源全部在使用中，等待一个被释放的资源或者一个新资源
             if (bagEntry == null || bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) {
                return bagEntry;
             }
@@ -156,7 +156,7 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
             timeout -= elapsedNanos(start);
          } while (timeout > 10_000);
 
-         return null;
+         return null; // 超时了还是没有获取到，返回null
       }
       finally {
          waiters.decrementAndGet();
@@ -172,10 +172,10 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
     * @throws NullPointerException if value is null
     * @throws IllegalStateException if the bagEntry was not borrowed from the bag
     */
-   public void requite(final T bagEntry)
+   public void requite(final T bagEntry) // 进行资源回收
    {
-      bagEntry.setState(STATE_NOT_IN_USE);
-
+      bagEntry.setState(STATE_NOT_IN_USE); // 将状态转为 未在使用 STATE_NOT_IN_USE
+      // 判断是否存在等待线程，若存在，则直接转手资源
       for (var i = 0; waiters.get() > 0; i++) {
          if (bagEntry.getState() != STATE_NOT_IN_USE || handoffQueue.offer(bagEntry)) {
             return;
@@ -187,7 +187,7 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
             Thread.yield();
          }
       }
-
+      // 否则，进行资源本地化
       final var threadLocalList = threadList.get();
       if (threadLocalList.size() < 50) {
          threadLocalList.add(weakThreadLocals ? new WeakReference<>(bagEntry) : bagEntry);
@@ -199,17 +199,17 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
     *
     * @param bagEntry an object to add to the bag
     */
-   public void add(final T bagEntry)
+   public void add(final T bagEntry) // 全部的资源均只能通过add方法进行添加
    {
       if (closed) {
          LOGGER.info("ConcurrentBag has been closed, ignoring add()");
          throw new IllegalStateException("ConcurrentBag has been closed, ignoring add()");
       }
 
-      sharedList.add(bagEntry);
-
-      // spin until a thread takes it or none are waiting
-      while (waiters.get() > 0 && bagEntry.getState() == STATE_NOT_IN_USE && !handoffQueue.offer(bagEntry)) {
+      sharedList.add(bagEntry);  // 新添加的资源优先放入 CopyOnWriteArrayList
+      // 【当有等待资源的线程时】，将资源交到某个等待线程后才返回（SynchronousQueue）
+      // spin until a thread takes it or none are waiting 【自旋】( 等待者 > 0 && 状态是 STATE_NOT_IN_USE && 往交接队列塞的时候没塞成功)直到一个线程取走这个连接或没有人在等待
+      while (waiters.get() > 0 && bagEntry.getState() == STATE_NOT_IN_USE && !handoffQueue.offer(bagEntry)) { // !handoffQueue.offer(bagEntry) 往交接队列塞的时候没塞成功
          Thread.yield();
       }
    }
@@ -223,14 +223,14 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
     * @throws IllegalStateException if an attempt is made to remove an object
     *         from the bag that was not borrowed or reserved first
     */
-   public boolean remove(final T bagEntry)
-   {
+   public boolean remove(final T bagEntry) // 资源只能通过remove方法进行移出
+   {     // 如果资源正在使用且无法进行状态切换，则返回失败
       if (!bagEntry.compareAndSet(STATE_IN_USE, STATE_REMOVED) && !bagEntry.compareAndSet(STATE_RESERVED, STATE_REMOVED) && !closed) {
          LOGGER.warn("Attempt to remove an object from the bag that was not borrowed or reserved: {}", bagEntry);
          return false;
       }
 
-      final boolean removed = sharedList.remove(bagEntry);
+      final boolean removed = sharedList.remove(bagEntry);  // 从 CopyOnWriteArrayList 中移出
       if (!removed && !closed) {
          LOGGER.warn("Attempt to remove an object from the bag that does not exist: {}", bagEntry);
       }
@@ -291,9 +291,9 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
     * @param bagEntry the item to reserve
     * @return true if the item was able to be reserved, false otherwise
     */
-   public boolean reserve(final T bagEntry)
-   {
-      return bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_RESERVED);
+   public boolean reserve(final T bagEntry) // 将连接标记为 STATE_RESERVED 保留状态
+   {  // 标记成功，返回 true
+      return bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_RESERVED); // 设置为 STATE_RESERVED 保留状态
    }
 
    /**
@@ -378,14 +378,14 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
     *
     * @return true if we should use WeakReferences in our ThreadLocals, false otherwise
     */
-   private boolean useWeakThreadLocals()
+   private boolean useWeakThreadLocals() // 初始化 weakThreadLocals 变量
    {
-      try {
+      try { // 人工指定是否使用弱引用，但是官方不推荐进行自主设置
          if (System.getProperty("com.zaxxer.hikari.useWeakReferences") != null) {   // undocumented manual override of WeakReference behavior
             return Boolean.getBoolean("com.zaxxer.hikari.useWeakReferences");
          }
 
-         return getClass().getClassLoader() != ClassLoader.getSystemClassLoader();
+         return getClass().getClassLoader() != ClassLoader.getSystemClassLoader(); // 默认通过判断初始化的 ClassLoader 是否是 系统ClassLoader 来确定
       }
       catch (SecurityException se) {
          return true;

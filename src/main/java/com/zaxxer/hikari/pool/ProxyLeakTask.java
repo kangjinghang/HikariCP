@@ -26,7 +26,7 @@ import org.slf4j.LoggerFactory;
 /**
  * A Runnable that is scheduled in the future to report leaks.  The ScheduledFuture is
  * cancelled if the connection is closed before the leak time expires.
- *
+ * 连接泄漏检测的原理就是：连接有借有还，hikari 是每借用一个 connection 则会创建一个延时的定时任务，在归还或者出异常的或者用户手动调用 evictConnection 的时候 cancel 掉这个 task
  * @author Brett Wooldridge
  */
 class ProxyLeakTask implements Runnable

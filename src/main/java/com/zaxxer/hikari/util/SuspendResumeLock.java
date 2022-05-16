@@ -30,7 +30,7 @@ import java.util.concurrent.Semaphore;
 public class SuspendResumeLock
 {
    public static final SuspendResumeLock FAUX_LOCK = new SuspendResumeLock(false) {
-      @Override
+      @Override  // 虚的 Lock，都是空方法
       public void acquire() {}
 
       @Override
@@ -58,7 +58,7 @@ public class SuspendResumeLock
    {
       acquisitionSemaphore = (createSemaphore ? new Semaphore(MAX_PERMITS, true) : null);
    }
-
+   // HikariPool 的 getConnection 方法获取不到连接，阻塞在 suspendResumeLock.acquire()，除非 resume 方法释放给定数目 MAX_PERMITS 10000的许可，将其返回到信号量
    public void acquire() throws SQLException
    {
       if (acquisitionSemaphore.tryAcquire()) {
@@ -78,7 +78,7 @@ public class SuspendResumeLock
 
    public void suspend()
    {
-      acquisitionSemaphore.acquireUninterruptibly(MAX_PERMITS);
+      acquisitionSemaphore.acquireUninterruptibly(MAX_PERMITS); // 一次性从此信号量获取给定数目10000的许可，在被提供这些许可前一直将线程阻塞
    }
 
    public void resume()

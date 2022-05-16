@@ -34,7 +34,7 @@ import static com.zaxxer.hikari.util.ClockSource.currentTime;
  *
  * @author Brett Wooldridge
  */
-final class PoolEntry implements IConcurrentBagEntry
+final class PoolEntry implements IConcurrentBagEntry // 对物理连接对一对一封装
 {
    private static final Logger LOGGER = LoggerFactory.getLogger(PoolEntry.class);
    private static final AtomicIntegerFieldUpdater<PoolEntry> stateUpdater;
@@ -45,7 +45,7 @@ final class PoolEntry implements IConcurrentBagEntry
 
    @SuppressWarnings("FieldCanBeLocal")
    private volatile int state = 0;
-   private volatile boolean evict;
+   private volatile boolean evict; // 标记连接池中的连接不可用。标记为 evict 只是表示连接池中的该连接不可用，但还在连接池当中，还会被 borrow 出来，只是 getConnection 的时候判断了(lazy 懒加载的思想)，如果是 isMarkedEvicted，则会从连接池中移除该连接，然后 close 掉
 
    private volatile ScheduledFuture<?> endOfLife;
    private volatile ScheduledFuture<?> keepalive;
@@ -74,7 +74,7 @@ final class PoolEntry implements IConcurrentBagEntry
    /**
     * Release this entry back to the pool.
     */
-   void recycle()
+   void recycle() //  // poolEntry 通过 borrow 从 bag 中取出，再通过 requite 放回。资源成功回收
    {
       if (connection != null) {
          this.lastAccessed = currentTime();
@@ -110,12 +110,12 @@ final class PoolEntry implements IConcurrentBagEntry
    {
       return hikariPool.toString();
    }
-
+   // 是否被标记驱逐，待清理
    boolean isMarkedEvicted()
    {
       return evict;
    }
-
+   // 标记为 evict 只是表示连接池中的该连接不可用，但还在连接池当中，还会被 borrow 出来，只是 getConnection 的时候判断了，如果是isMarkedEvicted，则会从连接池中移除该连接，然后 close 掉
    void markEvicted()
    {
       this.evict = true;

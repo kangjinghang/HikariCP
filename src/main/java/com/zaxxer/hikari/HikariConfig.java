@@ -59,36 +59,36 @@ public class HikariConfig implements HikariConfigMXBean
    private static boolean unitTest = false;
 
    // Properties changeable at runtime through the HikariConfigMXBean
-   //
+   // 运行时通过 HikariConfigMXBean 进行动态修改
    private volatile String catalog;
-   private volatile long connectionTimeout;
-   private volatile long validationTimeout;
-   private volatile long idleTimeout;
-   private volatile long leakDetectionThreshold;
-   private volatile long maxLifetime;
+   private volatile long connectionTimeout; // 如果是没有空闲连接且连接池满不能新建连接的情况下，hikari则是阻塞connectionTimeout的时间，没有得到连接抛出SQLTransientConnectionException。默认值是SECONDS.toMillis(30) = 30000，默认配置validate之后的值是30000，validate重置以后是如果小于250毫秒，则被重置回30秒
+   private volatile long validationTimeout;  // 控制连接测试活动的最长时间。这个值必须小于 connectionTimeout。最低可接受的验证超时时间为250 ms，默认值：5000
+   private volatile long idleTimeout; // 一个连接在池里闲置多久时会被抛弃，当 minimumIdle < maximumPoolSize 才生效，默认值 600000 ms，最小值为 10000 ms，0表示禁用该功能。支持 JMX 动态修改
+   private volatile long leakDetectionThreshold; // 即如果要生效则必须>0，而且不能小于2秒 || 当 maxLifetime > 0 时不能大于maxLifetime（默认值1800000毫秒=30分钟）
+   private volatile long maxLifetime; // 当一个连接存活了足够久，HikariCP 将会在它空闲时把它抛弃。最大的生命周期默认为1800000（30分钟）。数据库连接可能受到多种因素的影响，高可用、负载均衡、防火墙以及数据库本身的配置的影响，需要略低于数据库中的 wait_timeout 配置
    private volatile int maxPoolSize;
    private volatile int minIdle;
    private volatile String username;
    private volatile String password;
 
    // Properties NOT changeable at runtime
-   //
+   // 不允许在运行时进行改变的
    private long initializationFailTimeout;
    private String connectionInitSql;
-   private String connectionTestQuery;
+   private String connectionTestQuery; // 用来检查连接活性的 sql，要求是一个查询语句，常用select 'x'。如果驱动支持 JDBC4.0，建议不设置，这时默认会调用  Connection.isValid() 来检查，该方式会更高效一些
    private String dataSourceClassName;
    private String dataSourceJndiName;
    private String driverClassName;
    private String exceptionOverrideClassName;
    private String jdbcUrl;
-   private String poolName;
+   private String poolName; // 连接池名称。默认自动生成
    private String schema;
    private String transactionIsolationName;
    private boolean isAutoCommit;
    private boolean isReadOnly;
    private boolean isIsolateInternalQueries;
    private boolean isRegisterMbeans;
-   private boolean isAllowPoolSuspension;
+   private boolean isAllowPoolSuspension; // 控制连接池是否可以通过JMX暂停和恢复。这对于某些故障转移自动化方案很有用。当池被暂停时，调用 getConnection()将不会超时，并将一直保持到池恢复为止
    private DataSource dataSource;
    private Properties dataSourceProperties;
    private ThreadFactory threadFactory;
@@ -98,7 +98,7 @@ public class HikariConfig implements HikariConfigMXBean
    private Object healthCheckRegistry;
    private Properties healthCheckProperties;
 
-   private long keepaliveTime;
+   private long keepaliveTime; // 多久检查一次连接的活性。检查时会先把连接从池中拿出来（空闲的话），然后调用isValid()或执行connectionTestQuery来校验活性，如果通过校验，则放回池里。
 
    private volatile boolean sealed;
 
@@ -320,7 +320,7 @@ public class HikariConfig implements HikariConfigMXBean
 
    /** {@inheritDoc} */
    @Override
-   public void setValidationTimeout(long validationTimeoutMs)
+   public void setValidationTimeout(long validationTimeoutMs) // 如果小于250毫秒，则会被重置回5秒
    {
       if (validationTimeoutMs < SOFT_TIMEOUT_FLOOR) {
          throw new IllegalArgumentException("validationTimeout cannot be less than " + SOFT_TIMEOUT_FLOOR + "ms");
@@ -536,7 +536,7 @@ public class HikariConfig implements HikariConfigMXBean
     */
    public boolean isAllowPoolSuspension()
    {
-      return isAllowPoolSuspension;
+      return isAllowPoolSuspension; // 默认 false
    }
 
    /**
@@ -975,7 +975,7 @@ public class HikariConfig implements HikariConfigMXBean
 
       return null;
    }
-
+   // specified configuration的构造函数 / 每次getConnection的时候使用到
    @SuppressWarnings("StatementWithEmptyBody")
    public void validate()
    {
